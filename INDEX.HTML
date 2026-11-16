@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TeamSalas Performance Lab</title>
+    <style>
+        body { font-family: system-ui; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #0f172a; color: white; }
+        #display { font-size: 4rem; font-weight: bold; margin: 20px; color: #38bdf8; }
+        button { padding: 20px 40px; font-size: 1.5rem; font-weight: bold; border: none; border-radius: 12px; cursor: pointer; color: white; }
+        .start { background-color: #22c55e; }
+        .stop { background-color: #ef4444; }
+    </style>
+</head>
+<body>
+    <h1>Laboratorio CMJ</h1>
+    <div id="display">0.00 cm</div>
+    <button id="jumpBtn" class="start" onclick="toggleJump()">REGISTRAR DESPEGUE</button>
+
+    <script>
+        let isJumping = false;
+        let startTime;
+
+        function toggleJump() {
+            const btn = document.getElementById('jumpBtn');
+            const display = document.getElementById('display');
+            
+            if (!isJumping) {
+                startTime = performance.now();
+                isJumping = true;
+                btn.innerText = "REGISTRAR ATERRIZAJE";
+                btn.className = "stop";
+                display.innerText = "En vuelo...";
+            } else {
+                const flightTime = (performance.now() - startTime) / 1000;
+                // Ecuación de Bosco: h = 1.226 * t^2 (metros) a cm
+                const jumpHeight = (1.226 * Math.pow(flightTime, 2)) * 100;
+                
+                isJumping = false;
+                btn.innerText = "REGISTRAR DESPEGUE";
+                btn.className = "start";
+                display.innerText = jumpHeight.toFixed(2) + " cm";
+            }
+        }
+    </script>
+</body>
+</html>
