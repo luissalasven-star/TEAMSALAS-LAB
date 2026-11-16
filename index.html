@@ -1,47 +1,77 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TeamSalas Performance Lab</title>
-    <style>
-        body { font-family: system-ui; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #0f172a; color: white; }
-        #display { font-size: 4rem; font-weight: bold; margin: 20px; color: #38bdf8; }
-        button { padding: 20px 40px; font-size: 1.5rem; font-weight: bold; border: none; border-radius: 12px; cursor: pointer; color: white; }
-        .start { background-color: #22c55e; }
-        .stop { background-color: #ef4444; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>TeamSalas Performance Lab</title>
+  <style>
+    body { font-family: system-ui; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; background-color: #0f172a; color: white; margin: 0; padding: 20px; }
+    
+    /* Módulo de Visión */
+    #camera { width: 100%; max-width: 400px; height: 350px; background-color: #000; border-radius: 15px; object-fit: cover; margin-bottom: 20px; display: none; border: 2px solid #38bdf8; }
+    
+    #display { font-size: 4rem; font-weight: bold; margin: 20px; color: #38bdf8; }
+    button { padding: 15px 30px; font-size: 1.5rem; font-weight: bold; border: none; border-radius: 10px; cursor: pointer; color: white; margin: 10px; width: 100%; max-width: 350px; }
+    
+    .start { background-color: #22c55e; }
+    .stop { background-color: #ef4444; }
+    .cam-btn { background-color: #eab308; color: #0f172a; } /* Dorado TeamSalas */
+  </style>
 </head>
 <body>
-    <h1>Laboratorio CMJ</h1>
-    <div id="display">0.00 cm</div>
-    <button id="jumpBtn" class="start" onclick="toggleJump()">REGISTRAR DESPEGUE</button>
 
-    <script>
-        let isJumping = false;
-        let startTime;
+  <!-- Alimentación de Video iOS -->
+  <video id="camera" autoplay playsinline></video>
+  <button id="initCamBtn" class="cam-btn" onclick="iniciarCamara()">ACTIVAR CÁMARA</button>
 
-        function toggleJump() {
-            const btn = document.getElementById('jumpBtn');
-            const display = document.getElementById('display');
-            
-            if (!isJumping) {
-                startTime = performance.now();
-                isJumping = true;
-                btn.innerText = "REGISTRAR ATERRIZAJE";
-                btn.className = "stop";
-                display.innerText = "En vuelo...";
-            } else {
-                const flightTime = (performance.now() - startTime) / 1000;
-                // Ecuación de Bosco: h = 1.226 * t^2 (metros) a cm
-                const jumpHeight = (1.226 * Math.pow(flightTime, 2)) * 100;
-                
-                isJumping = false;
-                btn.innerText = "REGISTRAR DESPEGUE";
-                btn.className = "start";
-                display.innerText = jumpHeight.toFixed(2) + " cm";
-            }
-        }
-    </script>
+  <h2>Laboratorio CMJ</h2>
+  <div id="display">0.00 cm</div>
+  <button id="jumpBtn" class="start" onclick="toggleJump()">REGISTRAR DESPEGUE</button>
+
+  <script>
+    let isJumping = false;
+    let startTime;
+
+    // Conexión con el hardware del iPhone 16 Pro Max
+    async function iniciarCamara() {
+      const video = document.getElementById('camera');
+      const btnCam = document.getElementById('initCamBtn');
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' } // Exige cámara trasera para el terreno
+        });
+        video.srcObject = stream;
+        video.style.display = 'block';
+        btnCam.style.display = 'none'; // Oculta el botón tras activar
+      } catch (err) {
+        alert('Permiso de cámara denegado o error: ' + err.message);
+      }
+    }
+
+    // Cronometría cinemática
+    function toggleJump() {
+      const btn = document.getElementById('jumpBtn');
+      const display = document.getElementById('display');
+
+      if (!isJumping) {
+        isJumping = true;
+        startTime = performance.now();
+        btn.textContent = "REGISTRAR ATERRIZAJE";
+        btn.className = "stop";
+        display.textContent = "Volando...";
+      } else {
+        isJumping = false;
+        const flightTime = (performance.now() - startTime) / 1000;
+        
+        // Ecuación de caída libre adaptada a tiempo de vuelo
+        const height = (9.81 * Math.pow(flightTime, 2)) / 8;
+        const heightCm = height * 100;
+
+        display.textContent = heightCm.toFixed(2) + " cm";
+        btn.textContent = "REGISTRAR DESPEGUE";
+        btn.className = "start";
+      }
+    }
+  </script>
 </body>
 </html>
