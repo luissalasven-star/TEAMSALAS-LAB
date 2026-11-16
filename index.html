@@ -1,4 +1,54 @@
-<script>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>TeamSalas-Lab: IA CMJ Pro</title>
+  
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+
+  <style>
+    body { font-family: system-ui; display: flex; flex-direction: column; align-items: center; background-color: #0f172a; color: white; margin: 0; padding: 20px; }
+    
+    .video-container { position: relative; width: 100%; max-width: 400px; height: 450px; margin-bottom: 10px; border: 2px solid #38bdf8; border-radius: 15px; overflow: hidden; display: none; background-color: #000; }
+    #video { position: absolute; width: 100%; height: 100%; object-fit: cover; }
+    #output_canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 10; pointer-events: none; }
+    
+    #display { font-size: 3.5rem; font-weight: bold; margin: 5px 0; color: #38bdf8; text-align: center; }
+    #status { font-size: 1.1rem; color: #94a3b8; margin-bottom: 15px; text-transform: uppercase; font-weight: bold; text-align: center; height: 25px; }
+    
+    .btn-group { display: flex; gap: 10px; width: 100%; max-width: 350px; margin-bottom: 15px; }
+    button, .upload-btn { flex: 1; padding: 15px; font-size: 1rem; font-weight: bold; border: none; border-radius: 10px; cursor: pointer; color: #0f172a; text-align: center; text-decoration: none; display: flex; align-items: center; justify-content: center; background-color: #eab308; }
+    
+    #calBtn { background-color: #3b82f6; color: white; display: none; width: 100%; max-width: 350px; margin-top: 10px; }
+    .loading { background-color: #64748b; cursor: not-allowed; color: white; }
+    input[type="file"] { display: none; }
+  </style>
+</head>
+<body>
+
+  <h2>IA CMJ Lab</h2>
+  <div id="status">SELECCIONA UN MODO</div>
+  <div id="display">0.00 cm</div>
+
+  <div class="btn-group" id="menuBtns">
+    <button id="liveBtn" onclick="iniciarIA()">🔴 EN VIVO</button>
+    <label class="upload-btn">
+      📁 SUBIR VIDEO
+      <input type="file" accept="video/*" onchange="procesarVideo(event)">
+    </label>
+  </div>
+
+  <button id="calBtn" onclick="calibrarConTemporizador()">⏱ CALIBRAR (5 SEG)</button>
+
+  <div class="video-container" id="vidContainer">
+    <video id="video" playsinline muted></video>
+    <canvas id="output_canvas"></canvas>
+  </div>
+
+  <script>
     const videoElement = document.getElementById('video');
     const canvasElement = document.getElementById('output_canvas');
     const canvasCtx = canvasElement.getContext('2d');
@@ -37,7 +87,6 @@
       liveBtn.classList.add("loading");
       cameraMode = 'live';
       
-      // Para la cámara sí necesitamos reproducción automática
       videoElement.setAttribute("autoplay", "true"); 
       videoElement.removeAttribute("controls"); 
       
@@ -69,8 +118,8 @@
         
         if (cuenta < 0) {
           clearInterval(intervalo);
-          baselineY = null; // Fuerza recalibración
-          isAirborne = false; // Asegura que el estado aéreo se reinicie
+          baselineY = null; 
+          isAirborne = false; 
           status.textContent = "¡SUELO CALIBRADO! SALTA AHORA.";
           status.style.color = "#22c55e";
           calBtn.style.display = "none"; 
@@ -90,13 +139,11 @@
       
       resetVariables(); 
       
-      // SOLUCIÓN CLAVE: Quitamos autoplay y forzamos la pausa
       videoElement.removeAttribute("autoplay"); 
       videoElement.setAttribute("controls", "true");
       videoElement.src = URL.createObjectURL(file);
-      videoElement.pause(); // Lo congela inmediatamente
+      videoElement.pause(); 
       
-      // Procesa el primer fotograma congelado para que veas el esqueleto antes de darle play
       videoElement.onloadeddata = async () => {
         if(poseInstance) {
            await poseInstance.send({image: videoElement});
@@ -104,7 +151,7 @@
       };
       
       videoElement.onplay = () => {
-        resetVariables(); // Reinicio total cada vez que le das Play
+        resetVariables(); 
         status.textContent = "ANALIZANDO...";
         if ('requestVideoFrameCallback' in videoElement) {
           videoElement.requestVideoFrameCallback(procesarVideoCallback);
@@ -183,3 +230,5 @@
       canvasCtx.restore();
     }
   </script>
+</body>
+</html>
