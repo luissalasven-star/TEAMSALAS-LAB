@@ -3,74 +3,152 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>TeamSalas Performance Lab</title>
+  <title>TeamSalas-Lab: IA CMJ</title>
+  
+  <!-- Librerías de MediaPipe (IA de Visión) -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+
   <style>
-    body { font-family: system-ui; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; background-color: #0f172a; color: white; margin: 0; padding: 20px; }
+    body { font-family: system-ui; display: flex; flex-direction: column; align-items: center; background-color: #0f172a; color: white; margin: 0; padding: 20px; }
     
-    /* Módulo de Visión */
-    #camera { width: 100%; max-width: 400px; height: 350px; background-color: #000; border-radius: 15px; object-fit: cover; margin-bottom: 20px; display: none; border: 2px solid #38bdf8; }
+    /* Contenedor del video y el esqueleto */
+    .video-container { position: relative; width: 100%; max-width: 400px; height: 500px; margin-bottom: 10px; border: 2px solid #38bdf8; border-radius: 15px; overflow: hidden; display: none; background-color: #000; }
+    #video { position: absolute; width: 100%; height: 100%; object-fit: cover; }
+    #output_canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 10; }
     
-    #display { font-size: 4rem; font-weight: bold; margin: 20px; color: #38bdf8; }
-    button { padding: 15px 30px; font-size: 1.5rem; font-weight: bold; border: none; border-radius: 10px; cursor: pointer; color: white; margin: 10px; width: 100%; max-width: 350px; }
+    #display { font-size: 3.5rem; font-weight: bold; margin: 10px 0; color: #38bdf8; text-align: center; }
+    #status { font-size: 1.2rem; color: #94a3b8; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px; }
     
-    .start { background-color: #22c55e; }
-    .stop { background-color: #ef4444; }
+    button { padding: 15px; font-size: 1.2rem; font-weight: bold; border: none; border-radius: 10px; cursor: pointer; color: white; width: 100%; max-width: 350px; margin: 5px 0; }
     .cam-btn { background-color: #eab308; color: #0f172a; } /* Dorado TeamSalas */
+    .cal-btn { background-color: #3b82f6; display: none; }
+    .loading { background-color: #64748b; cursor: not-allowed; }
   </style>
 </head>
 <body>
 
-  <!-- Alimentación de Video iOS -->
-  <video id="camera" autoplay playsinline></video>
-  <button id="initCamBtn" class="cam-btn" onclick="iniciarCamara()">ACTIVAR CÁMARA</button>
-
-  <h2>Laboratorio CMJ</h2>
+  <h2>IA CMJ Lab</h2>
+  <div id="status">Esperando cámara...</div>
   <div id="display">0.00 cm</div>
-  <button id="jumpBtn" class="start" onclick="toggleJump()">REGISTRAR DESPEGUE</button>
+
+  <button id="initBtn" class="cam-btn" onclick="iniciarIA()">1. ACTIVAR CÁMARA E IA</button>
+  <button id="calBtn" class="cal-btn" onclick="calibrarSuelo()">2. CALIBRAR SUELO</button>
+
+  <div class="video-container" id="vidContainer">
+    <video id="video" autoplay playsinline></video>
+    <canvas id="output_canvas"></canvas>
+  </div>
 
   <script>
-    let isJumping = false;
-    let startTime;
+    const videoElement = document.getElementById('video');
+    const canvasElement = document.getElementById('output_canvas');
+    const canvasCtx = canvasElement.getContext('2d');
+    const display = document.getElementById('display');
+    const status = document.getElementById('status');
+    const initBtn = document.getElementById('initBtn');
+    const calBtn = document.getElementById('calBtn');
+    const vidContainer = document.getElementById('vidContainer');
 
-    // Conexión con el hardware del iPhone 16 Pro Max
-    async function iniciarCamara() {
-      const video = document.getElementById('camera');
-      const btnCam = document.getElementById('initCamBtn');
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment' } // Exige cámara trasera para el terreno
-        });
-        video.srcObject = stream;
-        video.style.display = 'block';
-        btnCam.style.display = 'none'; // Oculta el botón tras activar
-      } catch (err) {
-        alert('Permiso de cámara denegado o error: ' + err.message);
-      }
+    // Variables Biomecánicas
+    let baselineY = null; 
+    let isAirborne = false;
+    let flightStartTime = 0;
+    const JUMP_THRESHOLD = 0.03; // Sensibilidad del despegue (3% de la altura del frame)
+
+    // Configuración de la Red Neuronal Pose
+    const pose = new Pose({locateFile: (file) => {
+      return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
+    }});
+    
+    pose.setOptions({
+      modelComplexity: 1, // Balance perfecto entre velocidad y precisión para iPhone
+      smoothLandmarks: true,
+      minDetectionConfidence: 0.6,
+      minTrackingConfidence: 0.6
+    });
+
+    pose.onResults(onResults);
+
+    function iniciarIA() {
+      initBtn.textContent = "Cargando IA...";
+      initBtn.className = "loading";
+      
+      const camera = new Camera(videoElement, {
+        onFrame: async () => {
+          await pose.send({image: videoElement});
+        },
+        width: 480,
+        height: 640,
+        facingMode: 'environment' // Cámara Trasera
+      });
+      
+      camera.start().then(() => {
+        vidContainer.style.display = "block";
+        initBtn.style.display = "none";
+        calBtn.style.display = "block";
+        status.textContent = "IA Activa. Posiciona al atleta.";
+      });
     }
 
-    // Cronometría cinemática
-    function toggleJump() {
-      const btn = document.getElementById('jumpBtn');
-      const display = document.getElementById('display');
+    function calibrarSuelo() {
+      status.textContent = "Suelo calibrado. ¡LISTO PARA SALTAR!";
+      status.style.color = "#22c55e"; // Verde
+      calBtn.textContent = "RECALIBRAR SUELO";
+    }
 
-      if (!isJumping) {
-        isJumping = true;
-        startTime = performance.now();
-        btn.textContent = "REGISTRAR ATERRIZAJE";
-        btn.className = "stop";
-        display.textContent = "Volando...";
-      } else {
-        isJumping = false;
-        const flightTime = (performance.now() - startTime) / 1000;
-        
-        // Ecuación de caída libre adaptada a tiempo de vuelo
-        const height = (9.81 * Math.pow(flightTime, 2)) / 8;
-        const heightCm = height * 100;
+    function onResults(results) {
+      // Ajustar el canvas al tamaño del video
+      canvasElement.width = videoElement.videoWidth;
+      canvasElement.height = videoElement.videoHeight;
+      canvasCtx.save();
+      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
-        display.textContent = heightCm.toFixed(2) + " cm";
-        btn.textContent = "REGISTRAR DESPEGUE";
-        btn.className = "start";
+      if (results.poseLandmarks) {
+        // Dibujar el esqueleto
+        drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, {color: '#00FF00', lineWidth: 2});
+        drawLandmarks(canvasCtx, results.poseLandmarks, {color: '#eab308', lineWidth: 1, radius: 2});
+
+        // Extraer tobillos (Landmarks 27 y 28)
+        const leftAnkle = results.poseLandmarks[27];
+        const rightAnkle = results.poseLandmarks[28];
+        const avgAnkleY = (leftAnkle.y + rightAnkle.y) / 2; // Y baja desde arriba (0) hacia abajo (1)
+
+        // Si se apretó el botón de calibrar y aún no hay baseline, registrarlo
+        if (calBtn.textContent === "RECALIBRAR SUELO" && baselineY === null) {
+          baselineY = avgAnkleY;
+        }
+
+        // Lógica de detección de salto
+        if (baselineY !== null) {
+          // Despegue: El tobillo sube visualmente (Y disminuye más allá del umbral)
+          if (!isAirborne && avgAnkleY < (baselineY - JUMP_THRESHOLD)) {
+            isAirborne = true;
+            flightStartTime = performance.now();
+            status.textContent = "¡VOLANDO!";
+            status.style.color = "#eab308";
+          } 
+          // Aterrizaje: El tobillo vuelve a la altura del suelo
+          else if (isAirborne && avgAnkleY >= (baselineY - JUMP_THRESHOLD)) {
+            isAirborne = false;
+            const flightTimeStr = ((performance.now() - flightStartTime) / 1000).toFixed(3);
+            const flightTime = parseFloat(flightTimeStr);
+            
+            // Fórmula cinemática del CMJ: h = (g * t^2) / 8
+            const height = (9.81 * Math.pow(flightTime, 2)) / 8;
+            const heightCm = height * 100;
+
+            // Filtrar saltos irreales menores a 5cm
+            if(heightCm > 5) {
+                display.textContent = heightCm.toFixed(2) + " cm";
+                status.textContent = "Aterrizaje detectado. ¡LISTO PARA SALTAR!";
+                status.style.color = "#22c55e";
+            }
+          }
+        }
       }
+      canvasCtx.restore();
     }
   </script>
 </body>
