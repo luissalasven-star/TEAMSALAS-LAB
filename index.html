@@ -1,54 +1,4 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>TeamSalas-Lab: IA CMJ Pro</title>
-  
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
-
-  <style>
-    body { font-family: system-ui; display: flex; flex-direction: column; align-items: center; background-color: #0f172a; color: white; margin: 0; padding: 20px; }
-    
-    .video-container { position: relative; width: 100%; max-width: 400px; height: 450px; margin-bottom: 10px; border: 2px solid #38bdf8; border-radius: 15px; overflow: hidden; display: none; background-color: #000; }
-    #video { position: absolute; width: 100%; height: 100%; object-fit: cover; }
-    #output_canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 10; pointer-events: none; }
-    
-    #display { font-size: 3.5rem; font-weight: bold; margin: 5px 0; color: #38bdf8; text-align: center; }
-    #status { font-size: 1.1rem; color: #94a3b8; margin-bottom: 15px; text-transform: uppercase; font-weight: bold; text-align: center; height: 25px; }
-    
-    .btn-group { display: flex; gap: 10px; width: 100%; max-width: 350px; margin-bottom: 15px; }
-    button, .upload-btn { flex: 1; padding: 15px; font-size: 1rem; font-weight: bold; border: none; border-radius: 10px; cursor: pointer; color: #0f172a; text-align: center; text-decoration: none; display: flex; align-items: center; justify-content: center; background-color: #eab308; }
-    
-    #calBtn { background-color: #3b82f6; color: white; display: none; width: 100%; max-width: 350px; margin-top: 10px; }
-    .loading { background-color: #64748b; cursor: not-allowed; color: white; }
-    input[type="file"] { display: none; }
-  </style>
-</head>
-<body>
-
-  <h2>IA CMJ Lab</h2>
-  <div id="status">SELECCIONA UN MODO</div>
-  <div id="display">0.00 cm</div>
-
-  <div class="btn-group" id="menuBtns">
-    <button id="liveBtn" onclick="iniciarIA()">🔴 EN VIVO</button>
-    <label class="upload-btn">
-      📁 SUBIR VIDEO
-      <input type="file" accept="video/*" onchange="procesarVideo(event)">
-    </label>
-  </div>
-
-  <button id="calBtn" onclick="calibrarConTemporizador()">⏱ CALIBRAR (5 SEG)</button>
-
-  <div class="video-container" id="vidContainer">
-    <video id="video" autoplay playsinline muted></video>
-    <canvas id="output_canvas"></canvas>
-  </div>
-
-  <script>
+<script>
     const videoElement = document.getElementById('video');
     const canvasElement = document.getElementById('output_canvas');
     const canvasCtx = canvasElement.getContext('2d');
@@ -61,7 +11,7 @@
     let baselineY = null; 
     let isAirborne = false;
     let flightStartTime = 0;
-    const JUMP_THRESHOLD = 0.02; // Umbral ajustado para la punta del pie
+    const JUMP_THRESHOLD = 0.02; // Sensibilidad para la punta del pie
     let cameraMode = null; 
     let poseInstance = null;
 
@@ -86,6 +36,9 @@
       liveBtn.textContent = "Cargando...";
       liveBtn.classList.add("loading");
       cameraMode = 'live';
+      
+      // Para la cámara sí necesitamos reproducción automática
+      videoElement.setAttribute("autoplay", "true"); 
       videoElement.removeAttribute("controls"); 
       
       const camera = new Camera(videoElement, {
@@ -116,8 +69,8 @@
         
         if (cuenta < 0) {
           clearInterval(intervalo);
-          // Forzamos recalibración en el siguiente frame
-          baselineY = null; 
+          baselineY = null; // Fuerza recalibración
+          isAirborne = false; // Asegura que el estado aéreo se reinicie
           status.textContent = "¡SUELO CALIBRADO! SALTA AHORA.";
           status.style.color = "#22c55e";
           calBtn.style.display = "none"; 
@@ -133,24 +86,47 @@
       cameraMode = 'video';
       document.getElementById('menuBtns').style.display = "none";
       vidContainer.style.display = "block";
-      status.textContent = "DALE PLAY AL VIDEO";
+      status.textContent = "IA LISTA. DALE PLAY AL VIDEO";
       
-      baselineY = null;
-      isAirborne = false;
-      display.textContent = "0.00 cm";
+      resetVariables(); 
       
+      // SOLUCIÓN CLAVE: Quitamos autoplay y forzamos la pausa
+      videoElement.removeAttribute("autoplay"); 
       videoElement.setAttribute("controls", "true");
       videoElement.src = URL.createObjectURL(file);
+      videoElement.pause(); // Lo congela inmediatamente
+      
+      // Procesa el primer fotograma congelado para que veas el esqueleto antes de darle play
+      videoElement.onloadeddata = async () => {
+        if(poseInstance) {
+           await poseInstance.send({image: videoElement});
+        }
+      };
       
       videoElement.onplay = () => {
+        resetVariables(); // Reinicio total cada vez que le das Play
         status.textContent = "ANALIZANDO...";
         if ('requestVideoFrameCallback' in videoElement) {
           videoElement.requestVideoFrameCallback(procesarVideoCallback);
         }
       };
+
+      videoElement.onended = () => {
+          isAirborne = false;
+          baselineY = null;
+          status.textContent = "FIN DEL VIDEO. DALE PLAY PARA REPETIR.";
+          status.style.color = "#94a3b8";
+      };
     }
 
-    // Motor de lectura de fotogramas nativo (Exclusivo para videos pregrabados)
+    function resetVariables() {
+        baselineY = null;
+        isAirborne = false;
+        flightStartTime = 0;
+        display.textContent = "0.00 cm";
+        status.style.color = "#94a3b8";
+    }
+
     async function procesarVideoCallback(now, metadata) {
       if (videoElement.paused || videoElement.ended || cameraMode !== 'video') return;
       
@@ -171,25 +147,21 @@
         drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, {color: '#00FF00', lineWidth: 2});
         drawLandmarks(canvasCtx, results.poseLandmarks, {color: '#eab308', lineWidth: 1, radius: 2});
 
-        // Cambio crucial: Rastreo de PUNTAS DE LOS PIES (Landmarks 31 y 32)
         const leftToe = results.poseLandmarks[31];
         const rightToe = results.poseLandmarks[32];
         const currentToeY = (leftToe.y + rightToe.y) / 2; 
 
-        // Auto-calibración: Toma la altura del pie estando de pie
-        if (baselineY === null && currentToeY > 0) {
+        if (baselineY === null && currentToeY > 0 && !isAirborne) {
           baselineY = currentToeY;
         }
 
         if (baselineY !== null) {
-          // Despegue: La punta del pie sube por encima del umbral base
           if (!isAirborne && currentToeY < (baselineY - JUMP_THRESHOLD)) {
             isAirborne = true;
             flightStartTime = cameraMode === 'video' ? videoElement.currentTime : performance.now() / 1000;
             status.textContent = "¡VUELO ACTIVO!";
             status.style.color = "#eab308";
           } 
-          // Aterrizaje: La punta del pie vuelve a tocar el suelo (su punto base)
           else if (isAirborne && currentToeY >= (baselineY - JUMP_THRESHOLD)) {
             isAirborne = false;
             
@@ -199,11 +171,11 @@
             const height = (9.81 * Math.pow(flightTime, 2)) / 8;
             const heightCm = height * 100;
 
-            // Filtro para ignorar pequeños micro-saltos o ruido (menor a 10cm)
             if(heightCm > 10) {
                 display.textContent = heightCm.toFixed(2) + " cm";
                 status.textContent = "¡SALTO REGISTRADO!";
                 status.style.color = "#22c55e";
+                baselineY = null; 
             }
           }
         }
@@ -211,5 +183,3 @@
       canvasCtx.restore();
     }
   </script>
-</body>
-</html>
