@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>TeamSalas-Lab: IA CMJ Dual</title>
+  <title>TeamSalas-Lab: IA CMJ Pro</title>
   
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
@@ -44,7 +44,6 @@
   <button id="calBtn" onclick="calibrarConTemporizador()">⏱ CALIBRAR (5 SEG)</button>
 
   <div class="video-container" id="vidContainer">
-    <!-- Se agrega controls="true" para el modo video y se permite la interacción manual -->
     <video id="video" autoplay playsinline muted></video>
     <canvas id="output_canvas"></canvas>
   </div>
@@ -60,13 +59,11 @@
     const vidContainer = document.getElementById('vidContainer');
 
     let baselineY = null; 
-    let currentAnkleY = null;
     let isAirborne = false;
     let flightStartTime = 0;
-    const JUMP_THRESHOLD = 0.03; 
+    const JUMP_THRESHOLD = 0.02; // Umbral ajustado para la punta del pie
     let cameraMode = null; 
     let poseInstance = null;
-    let frameRequestId = null;
 
     function initPose() {
       poseInstance = new Pose({locateFile: (file) => {
@@ -84,11 +81,12 @@
     
     initPose();
 
+    // MODO 1: EN VIVO
     function iniciarIA() {
       liveBtn.textContent = "Cargando...";
       liveBtn.classList.add("loading");
       cameraMode = 'live';
-      videoElement.removeAttribute("controls"); // Ocultar controles en vivo
+      videoElement.removeAttribute("controls"); 
       
       const camera = new Camera(videoElement, {
         onFrame: async () => {
@@ -118,7 +116,8 @@
         
         if (cuenta < 0) {
           clearInterval(intervalo);
-          baselineY = currentAnkleY;
+          // Forzamos recalibración en el siguiente frame
+          baselineY = null; 
           status.textContent = "¡SUELO CALIBRADO! SALTA AHORA.";
           status.style.color = "#22c55e";
           calBtn.style.display = "none"; 
@@ -126,6 +125,7 @@
       }, 1000);
     }
 
+    // MODO 2: SUBIR VIDEO
     async function procesarVideo(event) {
       const file = event.target.files[0];
       if (!file) return;
@@ -139,32 +139,28 @@
       isAirborne = false;
       display.textContent = "0.00 cm";
       
-      // Habilitar controles para que puedas darle Play manual (exigencia de iOS)
       videoElement.setAttribute("controls", "true");
       videoElement.src = URL.createObjectURL(file);
       
-      // Iniciar análisis cuando el video empiece a reproducirse
       videoElement.onplay = () => {
         status.textContent = "ANALIZANDO...";
-        if (frameRequestId) cancelAnimationFrame(frameRequestId);
-        analizarFotogramas();
-      };
-      
-      // Detener análisis cuando se pause o termine
-      videoElement.onpause = () => {
-        if (frameRequestId) cancelAnimationFrame(frameRequestId);
+        if ('requestVideoFrameCallback' in videoElement) {
+          videoElement.requestVideoFrameCallback(procesarVideoCallback);
+        }
       };
     }
 
-    async function analizarFotogramas() {
+    // Motor de lectura de fotogramas nativo (Exclusivo para videos pregrabados)
+    async function procesarVideoCallback(now, metadata) {
       if (videoElement.paused || videoElement.ended || cameraMode !== 'video') return;
       
       if(poseInstance && videoElement.readyState >= 2) {
          await poseInstance.send({image: videoElement});
       }
-      frameRequestId = requestAnimationFrame(analizarFotogramas);
+      videoElement.requestVideoFrameCallback(procesarVideoCallback);
     }
 
+    // LÓGICA BIOMECÁNICA CENTRAL
     function onResults(results) {
       canvasElement.width = videoElement.videoWidth || 480;
       canvasElement.height = videoElement.videoHeight || 640;
@@ -175,37 +171,36 @@
         drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, {color: '#00FF00', lineWidth: 2});
         drawLandmarks(canvasCtx, results.poseLandmarks, {color: '#eab308', lineWidth: 1, radius: 2});
 
-        const leftAnkle = results.poseLandmarks[27];
-        const rightAnkle = results.poseLandmarks[28];
-        currentAnkleY = (leftAnkle.y + rightAnkle.y) / 2; 
+        // Cambio crucial: Rastreo de PUNTAS DE LOS PIES (Landmarks 31 y 32)
+        const leftToe = results.poseLandmarks[31];
+        const rightToe = results.poseLandmarks[32];
+        const currentToeY = (leftToe.y + rightToe.y) / 2; 
 
-        // Auto-calibración inicial para videos
-        if (cameraMode === 'video' && baselineY === null && currentAnkleY > 0) {
-          baselineY = currentAnkleY;
+        // Auto-calibración: Toma la altura del pie estando de pie
+        if (baselineY === null && currentToeY > 0) {
+          baselineY = currentToeY;
         }
 
         if (baselineY !== null) {
-          if (!isAirborne && currentAnkleY < (baselineY - JUMP_THRESHOLD)) {
+          // Despegue: La punta del pie sube por encima del umbral base
+          if (!isAirborne && currentToeY < (baselineY - JUMP_THRESHOLD)) {
             isAirborne = true;
-            // Usar el tiempo del video si estamos en modo video, sino el reloj
-            flightStartTime = cameraMode === 'video' ? videoElement.currentTime : performance.now();
+            flightStartTime = cameraMode === 'video' ? videoElement.currentTime : performance.now() / 1000;
             status.textContent = "¡VUELO ACTIVO!";
             status.style.color = "#eab308";
           } 
-          else if (isAirborne && currentAnkleY >= (baselineY - JUMP_THRESHOLD)) {
+          // Aterrizaje: La punta del pie vuelve a tocar el suelo (su punto base)
+          else if (isAirborne && currentToeY >= (baselineY - JUMP_THRESHOLD)) {
             isAirborne = false;
             
-            let flightTime = 0;
-            if (cameraMode === 'video') {
-               flightTime = videoElement.currentTime - flightStartTime;
-            } else {
-               flightTime = (performance.now() - flightStartTime) / 1000;
-            }
+            const currentTimestamp = cameraMode === 'video' ? videoElement.currentTime : performance.now() / 1000;
+            const flightTime = currentTimestamp - flightStartTime;
             
             const height = (9.81 * Math.pow(flightTime, 2)) / 8;
             const heightCm = height * 100;
 
-            if(heightCm > 5) {
+            // Filtro para ignorar pequeños micro-saltos o ruido (menor a 10cm)
+            if(heightCm > 10) {
                 display.textContent = heightCm.toFixed(2) + " cm";
                 status.textContent = "¡SALTO REGISTRADO!";
                 status.style.color = "#22c55e";
