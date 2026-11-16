@@ -14,13 +14,13 @@
     
     .video-container { position: relative; width: 100%; max-width: 400px; height: 450px; margin-bottom: 10px; border: 2px solid #38bdf8; border-radius: 15px; overflow: hidden; display: none; background-color: #000; }
     #video { position: absolute; width: 100%; height: 100%; object-fit: cover; }
-    #output_canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 10; }
+    #output_canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 10; pointer-events: none; }
     
     #display { font-size: 3.5rem; font-weight: bold; margin: 5px 0; color: #38bdf8; text-align: center; }
     #status { font-size: 1.1rem; color: #94a3b8; margin-bottom: 15px; text-transform: uppercase; font-weight: bold; text-align: center; height: 25px; }
     
     .btn-group { display: flex; gap: 10px; width: 100%; max-width: 350px; margin-bottom: 15px; }
-    button, .upload-btn { flex: 1; padding: 15px; font-size: 1rem; font-weight: bold; border: none; border-radius: 10px; cursor: pointer; color: #0f172a; text-align: center; text-decoration: none; display: flex; align-items: center; justify-content: center; background-color: #eab308; } /* Dorado TeamSalas */
+    button, .upload-btn { flex: 1; padding: 15px; font-size: 1rem; font-weight: bold; border: none; border-radius: 10px; cursor: pointer; color: #0f172a; text-align: center; text-decoration: none; display: flex; align-items: center; justify-content: center; background-color: #eab308; }
     
     #calBtn { background-color: #3b82f6; color: white; display: none; width: 100%; max-width: 350px; margin-top: 10px; }
     .loading { background-color: #64748b; cursor: not-allowed; color: white; }
@@ -44,7 +44,7 @@
   <button id="calBtn" onclick="calibrarConTemporizador()">⏱ CALIBRAR (5 SEG)</button>
 
   <div class="video-container" id="vidContainer">
-    <!-- El atributo playsinline es vital para iOS -->
+    <!-- Se agrega controls="true" para el modo video y se permite la interacción manual -->
     <video id="video" autoplay playsinline muted></video>
     <canvas id="output_canvas"></canvas>
   </div>
@@ -63,31 +63,36 @@
     let currentAnkleY = null;
     let isAirborne = false;
     let flightStartTime = 0;
-    const JUMP_THRESHOLD = 0.03; // Sensibilidad
-    let cameraMode = null; // 'live' o 'video'
+    const JUMP_THRESHOLD = 0.03; 
+    let cameraMode = null; 
+    let poseInstance = null;
+    let frameRequestId = null;
 
-    const pose = new Pose({locateFile: (file) => {
-      return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
-    }});
+    function initPose() {
+      poseInstance = new Pose({locateFile: (file) => {
+        return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
+      }});
+      
+      poseInstance.setOptions({
+        modelComplexity: 1,
+        smoothLandmarks: true,
+        minDetectionConfidence: 0.6,
+        minTrackingConfidence: 0.6
+      });
+      poseInstance.onResults(onResults);
+    }
     
-    pose.setOptions({
-      modelComplexity: 1,
-      smoothLandmarks: true,
-      minDetectionConfidence: 0.6,
-      minTrackingConfidence: 0.6
-    });
+    initPose();
 
-    pose.onResults(onResults);
-
-    // MODO 1: EN VIVO
     function iniciarIA() {
       liveBtn.textContent = "Cargando...";
       liveBtn.classList.add("loading");
       cameraMode = 'live';
+      videoElement.removeAttribute("controls"); // Ocultar controles en vivo
       
       const camera = new Camera(videoElement, {
         onFrame: async () => {
-          if(cameraMode === 'live') await pose.send({image: videoElement});
+          if(cameraMode === 'live' && poseInstance) await poseInstance.send({image: videoElement});
         },
         width: 480, height: 640,
         facingMode: 'environment'
@@ -113,15 +118,14 @@
         
         if (cuenta < 0) {
           clearInterval(intervalo);
-          baselineY = currentAnkleY; // Guarda la altura exacta de este instante
+          baselineY = currentAnkleY;
           status.textContent = "¡SUELO CALIBRADO! SALTA AHORA.";
           status.style.color = "#22c55e";
-          calBtn.style.display = "none"; // Oculta el botón para no estorbar
+          calBtn.style.display = "none"; 
         }
       }, 1000);
     }
 
-    // MODO 2: VIDEO WHATSAPP
     async function procesarVideo(event) {
       const file = event.target.files[0];
       if (!file) return;
@@ -129,30 +133,41 @@
       cameraMode = 'video';
       document.getElementById('menuBtns').style.display = "none";
       vidContainer.style.display = "block";
-      status.textContent = "ANALIZANDO VIDEO...";
+      status.textContent = "DALE PLAY AL VIDEO";
       
-      // Resetea variables
       baselineY = null;
       isAirborne = false;
       display.textContent = "0.00 cm";
       
+      // Habilitar controles para que puedas darle Play manual (exigencia de iOS)
+      videoElement.setAttribute("controls", "true");
       videoElement.src = URL.createObjectURL(file);
       
+      // Iniciar análisis cuando el video empiece a reproducirse
       videoElement.onplay = () => {
+        status.textContent = "ANALIZANDO...";
+        if (frameRequestId) cancelAnimationFrame(frameRequestId);
         analizarFotogramas();
+      };
+      
+      // Detener análisis cuando se pause o termine
+      videoElement.onpause = () => {
+        if (frameRequestId) cancelAnimationFrame(frameRequestId);
       };
     }
 
     async function analizarFotogramas() {
       if (videoElement.paused || videoElement.ended || cameraMode !== 'video') return;
-      await pose.send({image: videoElement});
-      requestAnimationFrame(analizarFotogramas);
+      
+      if(poseInstance && videoElement.readyState >= 2) {
+         await poseInstance.send({image: videoElement});
+      }
+      frameRequestId = requestAnimationFrame(analizarFotogramas);
     }
 
-    // LÓGICA BIOMECÁNICA (Compartida para ambos modos)
     function onResults(results) {
-      canvasElement.width = videoElement.videoWidth;
-      canvasElement.height = videoElement.videoHeight;
+      canvasElement.width = videoElement.videoWidth || 480;
+      canvasElement.height = videoElement.videoHeight || 640;
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
@@ -164,29 +179,25 @@
         const rightAnkle = results.poseLandmarks[28];
         currentAnkleY = (leftAnkle.y + rightAnkle.y) / 2; 
 
-        // En Modo Video, autocalibramos asumiendo que el video empieza con el atleta de pie
+        // Auto-calibración inicial para videos
         if (cameraMode === 'video' && baselineY === null && currentAnkleY > 0) {
           baselineY = currentAnkleY;
-          status.textContent = "EXTRAYENDO MÉTRICAS...";
         }
 
         if (baselineY !== null) {
-          // Despegue
           if (!isAirborne && currentAnkleY < (baselineY - JUMP_THRESHOLD)) {
             isAirborne = true;
-            flightStartTime = performance.now();
-            status.textContent = "¡TIEMPO DE VUELO ACTIVO!";
+            // Usar el tiempo del video si estamos en modo video, sino el reloj
+            flightStartTime = cameraMode === 'video' ? videoElement.currentTime : performance.now();
+            status.textContent = "¡VUELO ACTIVO!";
             status.style.color = "#eab308";
           } 
-          // Aterrizaje
           else if (isAirborne && currentAnkleY >= (baselineY - JUMP_THRESHOLD)) {
             isAirborne = false;
             
-            // Si es video, usamos el timestamp del video para mayor precisión en vez del reloj del sistema
             let flightTime = 0;
             if (cameraMode === 'video') {
-               // En un desarrollo avanzado extraeríamos el framerate exacto, aquí usamos el reloj interno del procesador
-               flightTime = (performance.now() - flightStartTime) / 1000;
+               flightTime = videoElement.currentTime - flightStartTime;
             } else {
                flightTime = (performance.now() - flightStartTime) / 1000;
             }
@@ -196,7 +207,7 @@
 
             if(heightCm > 5) {
                 display.textContent = heightCm.toFixed(2) + " cm";
-                status.textContent = cameraMode === 'video' ? "ANÁLISIS COMPLETADO" : "¡SALTO REGISTRADO!";
+                status.textContent = "¡SALTO REGISTRADO!";
                 status.style.color = "#22c55e";
             }
           }
