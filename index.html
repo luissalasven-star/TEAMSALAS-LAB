@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>TeamSalas-Lab: Salida y Reacción</title>
+  <title>TeamSalas-Lab: IA CMJ (Live)</title>
   
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
@@ -12,27 +12,27 @@
   <style>
     body { font-family: system-ui; display: flex; flex-direction: column; align-items: center; background-color: #0f172a; color: white; margin: 0; padding: 20px; }
     
-    .video-container { position: relative; width: 100%; max-width: 500px; height: 350px; margin-bottom: 15px; border: 2px solid #ef4444; border-radius: 15px; overflow: hidden; display: none; background-color: #000; }
+    .video-container { position: relative; width: 100%; max-width: 400px; height: 500px; margin-bottom: 15px; border: 2px solid #38bdf8; border-radius: 15px; overflow: hidden; display: none; background-color: #000; }
     #video { position: absolute; width: 100%; height: 100%; object-fit: cover; }
     #output_canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 10; pointer-events: none; }
     
-    #display { font-size: 4rem; font-weight: bold; margin: 10px 0; color: #ef4444; text-align: center; }
-    #status { font-size: 1.5rem; color: #94a3b8; margin-bottom: 25px; text-transform: uppercase; font-weight: bold; text-align: center; height: 35px; letter-spacing: 1px; }
+    #display { font-size: 4.5rem; font-weight: bold; margin: 10px 0; color: #38bdf8; text-align: center; }
+    #status { font-size: 1.2rem; color: #94a3b8; margin-bottom: 25px; text-transform: uppercase; font-weight: bold; text-align: center; height: 30px; letter-spacing: 1px; }
     
-    button { padding: 18px; font-size: 1.2rem; font-weight: bold; border: none; border-radius: 12px; cursor: pointer; color: white; text-align: center; width: 100%; max-width: 350px; background-color: #ef4444; margin-bottom: 10px; transition: 0.3s; }
+    button { padding: 18px; font-size: 1.2rem; font-weight: bold; border: none; border-radius: 12px; cursor: pointer; color: #0f172a; text-align: center; width: 100%; max-width: 350px; background-color: #eab308; margin-bottom: 10px; transition: 0.3s; }
     
-    #seqBtn { background-color: #3b82f6; display: none; }
-    .loading { background-color: #64748b; cursor: not-allowed; }
+    #calBtn { background-color: #3b82f6; color: white; display: none; }
+    .loading { background-color: #64748b; cursor: not-allowed; color: white; }
   </style>
 </head>
 <body>
 
-  <h2>TeamSalas LAB: Tacos de Salida</h2>
-  <div id="status">ESPERANDO CÁMARA</div>
-  <div id="display">0.000 s</div>
+  <h2>TeamSalas CMJ Lab</h2>
+  <div id="status">SISTEMA LISTO</div>
+  <div id="display">0.00 cm</div>
 
   <button id="liveBtn" onclick="iniciarIA()">🔴 ACTIVAR CÁMARA</button>
-  <button id="seqBtn" onclick="iniciarSecuencia()">🏁 INICIAR SECUENCIA WA</button>
+  <button id="calBtn" onclick="calibrarConTemporizador()">⏱ CALIBRAR SUELO (5s)</button>
 
   <div class="video-container" id="vidContainer">
     <video id="video" autoplay playsinline muted></video>
@@ -46,16 +46,13 @@
     const display = document.getElementById('display');
     const status = document.getElementById('status');
     const liveBtn = document.getElementById('liveBtn');
-    const seqBtn = document.getElementById('seqBtn');
+    const calBtn = document.getElementById('calBtn');
     const vidContainer = document.getElementById('vidContainer');
 
-    // Variables de la carrera
-    let baselineHandY = null; 
-    let gunTime = 0;
-    const HAND_THRESHOLD = 0.02; // Sensibilidad de despegue de la mano
-    let raceState = 'IDLE'; // IDLE, MARCAS, LISTOS, DISPARO, FINALIZADO
-    let audioCtx = null;
-    let sequenceTimeout1, sequenceTimeout2;
+    let baselineY = null; 
+    let isAirborne = false;
+    let flightStartTime = 0;
+    const JUMP_THRESHOLD = 0.02;
 
     const pose = new Pose({locateFile: (file) => {
       return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
@@ -69,146 +66,92 @@
     });
     pose.onResults(onResults);
 
-    function initAudio() {
-      if (!audioCtx) {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      }
-    }
-
-    function emitirPitido(frequency, duration, type = 'sine') {
-      if (!audioCtx) return;
-      const oscillator = audioCtx.createOscillator();
-      const gainNode = audioCtx.createGain();
-      oscillator.type = type;
-      oscillator.frequency.value = frequency;
-      oscillator.connect(gainNode);
-      gainNode.connect(audioCtx.destination);
-      oscillator.start();
-      setTimeout(() => { oscillator.stop(); }, duration);
-    }
-
     function iniciarIA() {
-      initAudio();
       liveBtn.textContent = "CARGANDO MOTOR IA...";
       liveBtn.classList.add("loading");
       
-      videoElement.setAttribute("autoplay", "true"); 
-      videoElement.removeAttribute("controls"); 
-      
       const camera = new Camera(videoElement, {
-        onFrame: async () => { await pose.send({image: videoElement}); },
-        width: 640, height: 480, // Apaisado (Horizontal) para abarcar la salida
-        facingMode: 'environment'
+        onFrame: async () => {
+          await pose.send({image: videoElement});
+        },
+        width: 480, height: 640,
+        facingMode: 'environment' 
       });
       
       camera.start().then(() => {
         vidContainer.style.display = "block";
         liveBtn.style.display = "none";
-        seqBtn.style.display = "block";
-        status.textContent = "POSICIÓN: PERFIL A LOS TACOS";
+        calBtn.style.display = "block";
+        status.textContent = "UBICA EL TELÉFONO EN EL TRÍPODE";
       });
     }
 
-    function iniciarSecuencia() {
-      // Reinicio seguro
-      clearTimeout(sequenceTimeout1);
-      clearTimeout(sequenceTimeout2);
-      baselineHandY = null;
-      display.textContent = "0.000 s";
-      display.style.color = "#ef4444";
-      seqBtn.disabled = true;
-      seqBtn.style.backgroundColor = "#64748b";
-
-      // 1. A sus marcas
-      raceState = 'MARCAS';
-      status.textContent = "A SUS MARCAS...";
-      status.style.color = "#38bdf8";
-      emitirPitido(400, 300);
-
-      // 2. Listos (A los 3 segundos)
-      sequenceTimeout1 = setTimeout(() => {
-        raceState = 'LISTOS';
-        status.textContent = "LISTOS...";
-        status.style.color = "#eab308";
-        emitirPitido(400, 300);
+    function calibrarConTemporizador() {
+      let cuenta = 5;
+      calBtn.disabled = true;
+      calBtn.style.backgroundColor = "#64748b";
+      
+      const intervalo = setInterval(() => {
+        status.textContent = `CALIBRANDO EN ${cuenta}... ¡PÁRATE DERECHO!`;
+        calBtn.textContent = `ESPERA ${cuenta}s`;
+        cuenta--;
         
-        // 3. Disparo (Aleatorio entre 1.5s y 2.5s después de "Listos")
-        const randomHold = Math.floor(Math.random() * 1000) + 1500;
-        sequenceTimeout2 = setTimeout(() => {
-          if (raceState !== 'FALSO') { // Solo dispara si no hubo salida en falso
-            raceState = 'DISPARO';
-            status.textContent = "¡PUM!";
-            status.style.color = "#22c55e";
-            emitirPitido(800, 500, 'square'); // Sonido agudo y fuerte
-            gunTime = performance.now() / 1000;
-          }
-        }, randomHold);
-
-      }, 3000);
+        if (cuenta < 0) {
+          clearInterval(intervalo);
+          baselineY = null; 
+          isAirborne = false; 
+          status.textContent = "¡SUELO CALIBRADO! SALTA AHORA.";
+          status.style.color = "#22c55e";
+          
+          calBtn.disabled = false;
+          calBtn.style.backgroundColor = "#3b82f6";
+          calBtn.textContent = "⏱ RECALIBRAR SUELO (5s)";
+        }
+      }, 1000);
     }
 
-    // LÓGICA BIOMECÁNICA (Motor de reacción)
     function onResults(results) {
-      canvasElement.width = videoElement.videoWidth || 640;
-      canvasElement.height = videoElement.videoHeight || 480;
+      canvasElement.width = videoElement.videoWidth || 480;
+      canvasElement.height = videoElement.videoHeight || 640;
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
       if (results.poseLandmarks) {
-        drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, {color: '#ef4444', lineWidth: 2});
-        drawLandmarks(canvasCtx, results.poseLandmarks, {color: '#ffffff', lineWidth: 1, radius: 2});
+        drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, {color: '#00FF00', lineWidth: 2});
+        drawLandmarks(canvasCtx, results.poseLandmarks, {color: '#eab308', lineWidth: 1, radius: 2});
 
-        // Marcadores 15 y 16 (Muñecas)
-        const leftWrist = results.poseLandmarks[15];
-        const rightWrist = results.poseLandmarks[16];
-        const currentHandY = (leftWrist.y + rightWrist.y) / 2; 
+        const leftToe = results.poseLandmarks[31];
+        const rightToe = results.poseLandmarks[32];
+        const currentToeY = (leftToe.y + rightToe.y) / 2; 
 
-        // Fijar la línea base de las manos en el suelo justo al decir "Listos"
-        if (raceState === 'LISTOS' && baselineHandY === null && currentHandY > 0) {
-          baselineHandY = currentHandY;
+        if (baselineY === null && currentToeY > 0 && !isAirborne && calBtn.textContent.includes("RECALIBRAR")) {
+          baselineY = currentToeY;
         }
 
-        if (baselineHandY !== null) {
-          // Detectar si las manos se levantan
-          if (currentHandY < (baselineHandY - HAND_THRESHOLD)) {
+        if (baselineY !== null) {
+          if (!isAirborne && currentToeY < (baselineY - JUMP_THRESHOLD)) {
+            isAirborne = true;
+            flightStartTime = performance.now() / 1000;
+            status.textContent = "¡TIEMPO DE VUELO ACTIVO!";
+            status.style.color = "#eab308";
+          } 
+          else if (isAirborne && currentToeY >= (baselineY - JUMP_THRESHOLD)) {
+            isAirborne = false;
             
-            // CASO A: Se movió en "LISTOS" antes del disparo
-            if (raceState === 'LISTOS') {
-              raceState = 'FALSO';
-              clearTimeout(sequenceTimeout2);
-              status.textContent = "¡SALIDA EN FALSO!";
-              status.style.color = "#ef4444";
-              emitirPitido(200, 1000, 'sawtooth'); // Sirena de error
-              reiniciarBoton();
-            } 
-            
-            // CASO B: Se movió tras el disparo
-            else if (raceState === 'DISPARO') {
-              raceState = 'FINALIZADO';
-              const reactionTime = (performance.now() / 1000) - gunTime;
-              display.textContent = reactionTime.toFixed(3) + " s";
-              
-              if (reactionTime < 0.100) {
-                status.textContent = "FALSO (Regla 0.100s WA)";
-                status.style.color = "#ef4444";
-                emitirPitido(200, 1000, 'sawtooth');
-              } else {
-                status.textContent = "TR REGISTRADO";
-                display.style.color = "#22c55e";
-              }
-              reiniciarBoton();
+            const flightTime = (performance.now() / 1000) - flightStartTime;
+            const height = (9.81 * Math.pow(flightTime, 2)) / 8;
+            const heightCm = height * 100;
+
+            if(heightCm > 10) {
+                display.textContent = heightCm.toFixed(2) + " cm";
+                status.textContent = "¡SALTO REGISTRADO!";
+                status.style.color = "#22c55e";
+                baselineY = null; 
             }
           }
         }
       }
       canvasCtx.restore();
-    }
-
-    function reiniciarBoton() {
-      seqBtn.disabled = false;
-      seqBtn.style.backgroundColor = "#3b82f6";
-      seqBtn.textContent = "🏁 REINICIAR SECUENCIA";
-      baselineHandY = null;
     }
   </script>
 </body>
