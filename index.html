@@ -3,29 +3,33 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>TeamSalas-Lab: IA CMJ (Live)</title>
-  
+  <title>TeamSalas-Lab: CMJ</title>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
-
   <style>
     body { font-family: system-ui; display: flex; flex-direction: column; align-items: center; background-color: #0f172a; color: white; margin: 0; padding: 20px; }
-    
+    nav { display: flex; gap: 10px; margin-bottom: 20px; width: 100%; max-width: 400px; }
+    .nav-btn { flex: 1; padding: 12px; text-align: center; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 0.9rem; }
+    .nav-active { background: #eab308; color: #0f172a; } /* Dorado activo */
+    .nav-inactive { background: #334155; color: white; } /* Gris inactivo */
     .video-container { position: relative; width: 100%; max-width: 400px; height: 500px; margin-bottom: 15px; border: 2px solid #38bdf8; border-radius: 15px; overflow: hidden; display: none; background-color: #000; }
     #video { position: absolute; width: 100%; height: 100%; object-fit: cover; }
     #output_canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 10; pointer-events: none; }
-    
     #display { font-size: 4.5rem; font-weight: bold; margin: 10px 0; color: #38bdf8; text-align: center; }
-    #status { font-size: 1.2rem; color: #94a3b8; margin-bottom: 25px; text-transform: uppercase; font-weight: bold; text-align: center; height: 30px; letter-spacing: 1px; }
-    
-    button { padding: 18px; font-size: 1.2rem; font-weight: bold; border: none; border-radius: 12px; cursor: pointer; color: #0f172a; text-align: center; width: 100%; max-width: 350px; background-color: #eab308; margin-bottom: 10px; transition: 0.3s; }
-    
+    #status { font-size: 1.2rem; color: #94a3b8; margin-bottom: 25px; text-transform: uppercase; font-weight: bold; text-align: center; height: 30px; }
+    button { padding: 18px; font-size: 1.2rem; font-weight: bold; border: none; border-radius: 12px; cursor: pointer; color: #0f172a; width: 100%; max-width: 350px; background-color: #eab308; margin-bottom: 10px; }
     #calBtn { background-color: #3b82f6; color: white; display: none; }
     .loading { background-color: #64748b; cursor: not-allowed; color: white; }
   </style>
 </head>
 <body>
+
+  <!-- Menú de Navegación -->
+  <nav>
+    <a href="index.html" class="nav-btn nav-active">🚀 SALTO CMJ</a>
+    <a href="salida.html" class="nav-btn nav-inactive">🏁 REACCIÓN</a>
+  </nav>
 
   <h2>TeamSalas CMJ Lab</h2>
   <div id="status">SISTEMA LISTO</div>
@@ -49,103 +53,58 @@
     const calBtn = document.getElementById('calBtn');
     const vidContainer = document.getElementById('vidContainer');
 
-    let baselineY = null; 
-    let isAirborne = false;
-    let flightStartTime = 0;
+    let baselineY = null; let isAirborne = false; let flightStartTime = 0;
     const JUMP_THRESHOLD = 0.02;
 
-    const pose = new Pose({locateFile: (file) => {
-      return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
-    }});
-    
-    pose.setOptions({
-      modelComplexity: 1, 
-      smoothLandmarks: true,
-      minDetectionConfidence: 0.6,
-      minTrackingConfidence: 0.6
-    });
+    const pose = new Pose({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`});
+    pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
     pose.onResults(onResults);
 
     function iniciarIA() {
-      liveBtn.textContent = "CARGANDO MOTOR IA...";
-      liveBtn.classList.add("loading");
-      
+      liveBtn.textContent = "CARGANDO MOTOR IA..."; liveBtn.classList.add("loading");
       const camera = new Camera(videoElement, {
-        onFrame: async () => {
-          await pose.send({image: videoElement});
-        },
-        width: 480, height: 640,
-        facingMode: 'environment' 
+        onFrame: async () => { await pose.send({image: videoElement}); },
+        width: 480, height: 640, facingMode: 'environment'
       });
-      
       camera.start().then(() => {
-        vidContainer.style.display = "block";
-        liveBtn.style.display = "none";
-        calBtn.style.display = "block";
+        vidContainer.style.display = "block"; liveBtn.style.display = "none"; calBtn.style.display = "block";
         status.textContent = "UBICA EL TELÉFONO EN EL TRÍPODE";
       });
     }
 
     function calibrarConTemporizador() {
-      let cuenta = 5;
-      calBtn.disabled = true;
-      calBtn.style.backgroundColor = "#64748b";
-      
+      let cuenta = 5; calBtn.disabled = true; calBtn.style.backgroundColor = "#64748b";
       const intervalo = setInterval(() => {
-        status.textContent = `CALIBRANDO EN ${cuenta}... ¡PÁRATE DERECHO!`;
-        calBtn.textContent = `ESPERA ${cuenta}s`;
-        cuenta--;
-        
+        status.textContent = `CALIBRANDO EN ${cuenta}...`; calBtn.textContent = `ESPERA ${cuenta}s`; cuenta--;
         if (cuenta < 0) {
-          clearInterval(intervalo);
-          baselineY = null; 
-          isAirborne = false; 
-          status.textContent = "¡SUELO CALIBRADO! SALTA AHORA.";
-          status.style.color = "#22c55e";
-          
-          calBtn.disabled = false;
-          calBtn.style.backgroundColor = "#3b82f6";
-          calBtn.textContent = "⏱ RECALIBRAR SUELO (5s)";
+          clearInterval(intervalo); baselineY = null; isAirborne = false;
+          status.textContent = "¡SUELO CALIBRADO! SALTA AHORA."; status.style.color = "#22c55e";
+          calBtn.disabled = false; calBtn.style.backgroundColor = "#3b82f6"; calBtn.textContent = "⏱ RECALIBRAR (5s)";
         }
       }, 1000);
     }
 
     function onResults(results) {
-      canvasElement.width = videoElement.videoWidth || 480;
-      canvasElement.height = videoElement.videoHeight || 640;
-      canvasCtx.save();
-      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-
+      canvasElement.width = videoElement.videoWidth || 480; canvasElement.height = videoElement.videoHeight || 640;
+      canvasCtx.save(); canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
       if (results.poseLandmarks) {
         drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, {color: '#00FF00', lineWidth: 2});
         drawLandmarks(canvasCtx, results.poseLandmarks, {color: '#eab308', lineWidth: 1, radius: 2});
+        const currentToeY = (results.poseLandmarks[31].y + results.poseLandmarks[32].y) / 2; 
 
-        const leftToe = results.poseLandmarks[31];
-        const rightToe = results.poseLandmarks[32];
-        const currentToeY = (leftToe.y + rightToe.y) / 2; 
-
-        if (baselineY === null && currentToeY > 0 && !isAirborne && calBtn.textContent.includes("RECALIBRAR")) {
-          baselineY = currentToeY;
-        }
+        if (baselineY === null && currentToeY > 0 && !isAirborne && calBtn.textContent.includes("RECALIBRAR")) baselineY = currentToeY;
 
         if (baselineY !== null) {
           if (!isAirborne && currentToeY < (baselineY - JUMP_THRESHOLD)) {
-            isAirborne = true;
-            flightStartTime = performance.now() / 1000;
-            status.textContent = "¡TIEMPO DE VUELO ACTIVO!";
-            status.style.color = "#eab308";
-          } 
-          else if (isAirborne && currentToeY >= (baselineY - JUMP_THRESHOLD)) {
+            isAirborne = true; flightStartTime = performance.now() / 1000;
+            status.textContent = "¡VUELO ACTIVO!"; status.style.color = "#eab308";
+          } else if (isAirborne && currentToeY >= (baselineY - JUMP_THRESHOLD)) {
             isAirborne = false;
-            
             const flightTime = (performance.now() / 1000) - flightStartTime;
-            const height = (9.81 * Math.pow(flightTime, 2)) / 8;
-            const heightCm = height * 100;
-
+            const heightCm = ((9.81 * Math.pow(flightTime, 2)) / 8) * 100;
             if(heightCm > 10) {
                 display.textContent = heightCm.toFixed(2) + " cm";
-                status.textContent = "¡SALTO REGISTRADO!";
-                status.style.color = "#22c55e";
+                status.textContent = "¡SALTO REGISTRADO!"; status.style.color = "#22c55e";
                 baselineY = null; 
             }
           }
